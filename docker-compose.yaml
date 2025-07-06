@@ -1,0 +1,15 @@
+services:
+  check_ege:
+    container_name: check_ege
+    build: ./bot
+    restart: always
+    command: ["/app/docker/run.sh"]
+    env_file:
+      - .env-non-dev
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.50"
+    volumes:
+      - ./bot/src:/app/src
