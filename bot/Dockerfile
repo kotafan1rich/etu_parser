@@ -8,6 +8,11 @@ ENV PYTHONUNBUFFERED=1
 RUN apt-get update && \
     apt-get install -y
 
+RUN apt install tzdata
+
+ENV TZ=Europe/Moscow
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 RUN pip install --upgrade pip && pip install poetry
 
 COPY pyproject.toml poetry.lock ./
