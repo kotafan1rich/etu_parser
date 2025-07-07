@@ -13,7 +13,7 @@ RUN apt install tzdata
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip install --upgrade pip --root-user-action && pip install poetry --root-user-action
+RUN pip install --upgrade pip && pip install poetry
 
 COPY pyproject.toml poetry.lock ./
 
