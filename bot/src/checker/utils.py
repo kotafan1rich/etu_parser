@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import logging
 from urllib.parse import urlparse, parse_qs
 from bs4 import BeautifulSoup
@@ -119,8 +120,12 @@ def get_current_pos() -> tuple[int, int]:
 async def sender():
     while True:
         pos, current_pos = get_current_pos()
-        for user_id in active_users:
-            await bot.send_message(user_id, f"Ваша позиция: {pos}({current_pos})/68")
-            logger.info(f"Ваша позиция: {pos}({current_pos})/68")
+        hours_now = datetime.now().hour
+        if hours_now > 8 or hours_now < 1:
+            for user_id in active_users:
+                await bot.send_message(
+                    user_id, f"Ваша позиция: {pos}({current_pos}) / 68"
+                )
+                logger.info(f"Ваша позиция: {pos}({current_pos}) / 68")
 
-        await asyncio.sleep(60 * 60 * 3)
+        await asyncio.sleep(60 * 60 * 1.5)
