@@ -89,30 +89,35 @@ def get_main_table():
     html = response.text
     soup = BeautifulSoup(html, "lxml")
     res = {}
-    my_pos = -1
+    my_pos = 0
     for row in soup.find_all("tr"):
         rows_data = [i.text.strip() for i in row.find_all("td")]
-        id = rows_data[1]
-        if id == "3675991":
-            my_pos = int(rows_data[0])
-            continue
+        if rows_data:
+            id = rows_data[1]
+            if id == "3675991":
+                my_pos = int(rows_data[0])
+                continue
 
-        rate = int(rows_data[4])
-        priority = int(rows_data[2])
-        if rate < 285 and rows_data[3] == "Основные места":
-            break
+            rate = int(rows_data[4])
+            priority = int(rows_data[2])
+            if rate < 285 and rows_data[3] == "Основные места":
+                break
 
-        res[id] = {"rate": rate, "priority": priority}
+            res[id] = {"rate": rate, "priority": priority}
     return res, my_pos
 
 
-def get_current_pos() -> tuple[int, int]:
+def get_current_pos() -> tuple[int | None, int | None]:
     users_upper, my_pos = get_main_table()
-    progams_ids = get_programs_hrefs()
-    for programm_id in progams_ids:
-        if programm_id != "01978f0d-1f93-7ee6-8067-bee68ca59d4f":
-            users_upper = program_for_user(programm_id, users_upper)
-    current_pos = len(users_upper) + 1
+    logger.info(f"Users upper: {len(users_upper)}, my_pos: {my_pos}")
+    if users_upper and my_pos:
+        programs_ids = get_programs_hrefs()
+        logger.info(f"Program ids count: {len(programs_ids)}")
+        for program_id in programs_ids:
+            if program_id != "01978f0d-1f93-7ee6-8067-bee68ca59d4f":
+                users_upper = program_for_user(program_id, users_upper)
+                logger.info(f"{program_id} parsed")
+        current_pos = len(users_upper) + 1
     return current_pos, my_pos
 
 
@@ -125,5 +130,6 @@ async def sender():
                 user_id, mes
             )
             logger.info(mes)
+            logger.info(f"end pars\n{'-' * 100}")
 
         await asyncio.sleep(60 * 60 * 1.5)
