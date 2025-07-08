@@ -92,7 +92,6 @@ def get_main_table():
     my_pos = 0
     for row in soup.find_all("tr"):
         rows_data = [i.text.strip() for i in row.find_all("td")]
-        logger.info(rows_data)
         if rows_data:
             id = rows_data[1]
             if id == "3675991":
