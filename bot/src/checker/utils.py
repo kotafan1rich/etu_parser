@@ -12,6 +12,12 @@ logger.setLevel(logging.INFO)
 
 
 class EtuParser:
+    HEADERS = {
+        "Accept": "text/html",
+        "Accept-Language": "ru,en;q=0.9",
+        "Connection": "keep-alive",
+    }
+
     PROGRAMS = {
         "Прикладная математика и информатика": {
             "code": "01.03.02",
