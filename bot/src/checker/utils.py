@@ -412,7 +412,7 @@ async def sender(
             mes = "\n".join(
                 (
                     f"Позиция в ЛЭТИ: {etu_concurents + 1} ({etu_pos}) / {etu_places} мест",
-                    f"Позиция в Политехе: {poly_concurents + 1} ({poly_pos}) / {poly_places} мест",
+                    f"Позиция в Политехе: {poly_pos} ({poly_concurents + 1}) / {poly_places} мест",
                 )
             )
 
