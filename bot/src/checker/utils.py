@@ -12,24 +12,6 @@ logger.setLevel(logging.INFO)
 
 
 class EtuParser:
-    HEADERS = {
-        "Accept": "text/html",
-        "Accept-Language": "ru,en;q=0.9",
-        "Connection": "keep-alive",
-        "If-None-Match": '"63a9d2087705d1c89dae206245b142c9"',
-        "Origin": "https://abit.etu.ru",
-        "Referer": "https://abit.etu.ru/",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-site",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
-                (KHTML, like Gecko) Chrome/134.0.0.0 YaBrowser/25.4.0.0 Safari/537.36",
-        "sec-ch-ua": '"Chromium";v="134", "Not:A-Brand";v="24", "YaBrowser";v="25.4", \
-                "Yowser";v="2.5"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
-    }
-
     PROGRAMS = {
         "Прикладная математика и информатика": {
             "code": "01.03.02",
@@ -191,7 +173,7 @@ class EtuParser:
                     break
             return users
 
-    async def get_programs_ids(self):
+    async def get_programs_ids(self) -> list | None:
         url = "https://lists.priem.etu.ru/public/page"
         params = {
             "id": "01978f0d-1f93-7ee6-8067-bee68ca59d4f",
@@ -237,7 +219,8 @@ class EtuParser:
                 if rows_data:
                     id = rows_data[1]
                     quata = rows_data[3]
-
+                    if id == "3675991" or quata not in ("БВИ", "Основные места"):
+                        continue
 
                     rate = int(rows_data[4])
                     priority = int(rows_data[2])
