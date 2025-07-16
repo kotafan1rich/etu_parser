@@ -272,6 +272,22 @@ class PolyParser:
         "x-csrftoken": "undefined",
     }
 
+    PROGRAMS_IDS = [
+        776,  # 01.03.02 Прикладная математика и информатика
+        423,  # 02.03.01 Математика и компьютерные науки
+        450,  # 02.03.03 матобес и администрирование информационных систем
+        287,  # 09.03.01 Информатика и вычислительная техника
+        340,  # 09.03.02 Информационные системы и технологии
+        765,  # 09.03.03 Прикладная информатика
+        847,  # 09.03.04 Программная инженерия
+        298,  # 10.03.01 Информационная безопасность
+        360,  # 10.05.01 Компьютерная безопасность
+        315,  # 10.05.03 Информационная безопасность автоматизированных систем
+        320,  # 10.05.04 Информационно-аналитические системы безопасности
+        35,  # 38.03.05 Бизнес-информатика
+        243,  # 45.03.04 Интеллектуальные системы в гуманитарной сфере
+    ]
+
     def __init__(self, session, user_id):
         self.session = session
         self.user_id = user_id
@@ -360,7 +376,6 @@ async def get_my_poly_pos(session, user_id: str) -> tuple[int, int, int]:
     select_program_id = "847"  # Программная инженерия
     logger.info("Start Poly Parser")
     parser = PolyParser(session, user_id)
-    ids = await parser.get_programs_id()
     target_program_table = await parser.get_target_program_table(select_program_id)
     places_target = await parser.get_places(select_program_id)
     my_pos = target_program_table.get(user_id).get("num")
@@ -368,10 +383,15 @@ async def get_my_poly_pos(session, user_id: str) -> tuple[int, int, int]:
     logger.info(
         f"Concurents count: {len(concurents)}, my_pos: {my_pos}, places: {places_target}"
     )
-    for program_id in ids:
+    for program_id in PolyParser.PROGRAMS_IDS:
         if program_id == select_program_id:
             continue
-        program_table = await parser.get_target_program_table(program_id)
+        try:
+            program_table = await parser.get_target_program_table(program_id)
+        except AttributeError:
+            await asyncio.sleep(10)
+            logger.info("Sleep 10 sec...")
+            program_table = await parser.get_target_program_table(program_id)
         places = await parser.get_places(program_id)
         concurents = parser.clear_concurents(
             concurrents=concurents, table=program_table, places=places
