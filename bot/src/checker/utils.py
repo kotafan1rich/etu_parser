@@ -378,12 +378,15 @@ async def get_my_poly_pos(session, user_id: str) -> tuple[int, int, int]:
     parser = PolyParser(session, user_id)
     try:
         target_program_table = await parser.get_target_program_table(select_program_id)
+        places_target = await parser.get_places(select_program_id)
+        my_pos = target_program_table.get(user_id).get("num")
     except AttributeError:
         await asyncio.sleep(10)
         logger.info("Sleep 10 sec...")
+
         target_program_table = await parser.get_target_program_table(select_program_id)
-    places_target = await parser.get_places(select_program_id)
-    my_pos = target_program_table.get(user_id).get("num")
+        places_target = await parser.get_places(select_program_id)
+        my_pos = target_program_table.get(user_id).get("num")
     concurents = parser.get_concurents(target_program_table, my_pos)
     logger.info(
         f"Concurents count: {len(concurents)}, my_pos: {my_pos}, places: {places_target}"
@@ -396,6 +399,7 @@ async def get_my_poly_pos(session, user_id: str) -> tuple[int, int, int]:
         except AttributeError:
             await asyncio.sleep(10)
             logger.info("Sleep 10 sec...")
+
             program_table = await parser.get_target_program_table(program_id)
         places = await parser.get_places(program_id)
         concurents = parser.clear_concurents(
