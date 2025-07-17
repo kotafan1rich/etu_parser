@@ -463,4 +463,4 @@ async def sender(
         else:
             logger.error("Ошибка парсинга")
 
-        await asyncio.sleep(60 * 60 * 1.5)
+        # await asyncio.sleep(60 * 60 * 1.5)
