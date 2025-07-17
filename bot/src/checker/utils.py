@@ -171,7 +171,7 @@ class EtuParser:
                     rows_data = [i.text.strip() for i in row.find_all("td")]
                     id = rows_data[1]
                     priority = int(rows_data[2])
-                    user_data = users.get(id)
+                    user_data = users.get(id, 0)
                     if user_data and priority < user_data["priority"]:
                         users.pop(id)
                         users_in_program += 1
@@ -200,7 +200,7 @@ class EtuParser:
                     budget = td[2].find("a").get("href")
                     fragment = urlparse(budget).fragment
                     params = parse_qs(fragment.lstrip("/?"))
-                    id = params.get("id")[0]
+                    id = params.get("id", (0,))[0]
                     self.PROGRAMS[name]["id"] = id
 
     async def get_main_table(self):
@@ -379,14 +379,16 @@ async def get_my_poly_pos(session, user_id: str) -> tuple[int, int, int]:
     try:
         target_program_table = await parser.get_target_program_table(select_program_id)
         places_target = await parser.get_places(select_program_id)
-        my_pos = target_program_table.get(user_id).get("num")
+        my_pos = target_program_table.get(user_id, 0).get("num", 0)
     except AttributeError:
         await asyncio.sleep(60)
         logger.info("Sleep 60 sec...")
 
         target_program_table = await parser.get_target_program_table(select_program_id)
         places_target = await parser.get_places(select_program_id)
-        my_pos = target_program_table.get(user_id).get("num")
+        my_pos = target_program_table.get(user_id, 0).get("num", 0)
+    if not my_pos or not target_program_table:
+        return None
     concurents = parser.get_concurents(target_program_table, my_pos)
     logger.info(
         f"Concurents count: {len(concurents)}, my_pos: {my_pos}, places: {places_target}"
@@ -436,19 +438,29 @@ async def sender(
             poly_task = asyncio.create_task(
                 get_my_poly_pos(session=session, user_id=user_id)
             )
-            etu_pos, etu_concurents, etu_places = await etu_task
-            poly_pos, poly_concurents, poly_places = await poly_task
-            mes = "\n".join(
-                (
-                    f"Позиция в ЛЭТИ: {etu_concurents + 1} ({etu_pos}) / {etu_places} мест",
-                    f"Позиция в Политехе: {poly_pos} ({poly_concurents + 1}) / {poly_places} мест",
-                )
-            )
+            etu_data = await etu_task
+            poly_data = await poly_task
 
+        results = []
+        if etu_data:
+            etu_pos, etu_concurents, etu_places = etu_data
+            res_etu = (
+                f"Позиция в ЛЭТИ: {etu_concurents + 1} ({etu_pos}) / {etu_places} мест"
+            )
+            results.append(res_etu)
+        if poly_data:
+            poly_pos, poly_concurents, poly_places = poly_data
+            res_poly = f"Позиция в Политехе: {poly_pos} ({poly_concurents + 1}) / {poly_places} мест"
+            results.append(res_poly)
+
+        if results:
+            mes = "\n".join(results)
             for user_id in active_users:
                 await bot.send_message(user_id, mes)
 
             logger.info(mes)
             logger.info(f"end pars\n{'-' * 100}")
+        else:
+            logger.error("Ошибка парсинга")
 
         await asyncio.sleep(60 * 60 * 1.5)
