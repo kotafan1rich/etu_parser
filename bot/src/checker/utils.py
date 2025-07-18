@@ -498,4 +498,4 @@ async def sender(
         else:
             logger.error("Parsing error, no data received")
         delay = random.randint(int(60 * 60 * 1.5), 60 * 60 * 2)
-        # await asyncio.sleep(10)
+        await asyncio.sleep(delay)
