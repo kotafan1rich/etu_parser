@@ -12,7 +12,6 @@ from src.create_bot import bot
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Добавьте после импортов
 ua = UserAgent()
 
 
@@ -151,8 +150,8 @@ class EtuParser:
         },
     }
 
-    def __init__(self, user_id_in_etu: str, session: ClientSession):
-        self.user_id_in_etu: str = user_id_in_etu
+    def __init__(self, upgu_user_id: str, session: ClientSession):
+        self.user_id_in_etu: str = upgu_user_id
         self.session: ClientSession = session
 
     async def program_for_user(self, url_id: str, users: dict) -> list:
@@ -250,7 +249,7 @@ class EtuParser:
                 priority = int(rows_data[1])
                 quata = rows_data[2]
                 rate = int(rows_data[3])
-                if id == self.user_id_in_etu:
+                if str(id) == str(self.user_id_in_etu):
                     break
                 res[id] = {"rate": rate, "priority": priority}
             return res
@@ -306,9 +305,9 @@ class PolyParser:
         243,  # 45.03.04 Интеллектуальные системы в гуманитарной сфере
     ]
 
-    def __init__(self, session: ClientSession, user_id: str):
+    def __init__(self, session: ClientSession, epgu_user_id: str):
         self.session: ClientSession = session
-        self.user_id: str = user_id
+        self.upgu_user_id: str = epgu_user_id
 
     async def update_cookie(self) -> None:
         async with self.session.get(
@@ -318,7 +317,6 @@ class PolyParser:
             if response.status != 200:
                 response.raise_for_status()
             cookies = response.cookies
-            logger.info(f"Cookies: {cookies}")
             cookies_dict = dict(cookies.items())
             self.session.cookie_jar.update_cookies(cookies_dict)
 
@@ -359,7 +357,6 @@ class PolyParser:
             if response.status != 200:
                 response.raise_for_status()
             json_data = await response.json()
-            # logger.info(f"Program ID: {program_id}, Response: {json_data}")
             results = json_data.get("results", {})
             table = {}
             k = 1
@@ -393,7 +390,7 @@ class PolyParser:
         return concurrents
 
     def clear_concurents(self, concurrents: dict, table, places: int) -> dict:
-        for code, value in concurrents.copy().items():
+        for code in concurrents.copy().keys():
             if code in table:
                 cur_pr = concurrents[code]["priority"]
                 prog_pr = table[code]["priority"]
@@ -403,18 +400,18 @@ class PolyParser:
         return concurrents
 
 
-async def get_my_poly_pos(user_id: str) -> tuple[int, int, int]:
+async def get_my_poly_pos(epgu_user_id: str) -> tuple[int, int, int]:
     async with ClientSession(timeout=ClientTimeout(60 * 5)) as session:
         select_program_id = "847"  # Программная инженерия
         logger.info("Start Poly Parser")
-        parser = PolyParser(session, user_id)
+        parser = PolyParser(session, epgu_user_id)
         await parser.update_cookie()
         try:
             target_program_table = await parser.get_target_program_table(
                 select_program_id
             )
             places_target = await parser.get_places(select_program_id)
-            my_pos = target_program_table.get(user_id, {}).get("num", 0)
+            my_pos = target_program_table.get(epgu_user_id, {}).get("num", 0)
         except TimeoutError:
             await asyncio.sleep(60)
             logger.info("Sleep 60 sec...")
@@ -423,7 +420,7 @@ async def get_my_poly_pos(user_id: str) -> tuple[int, int, int]:
                 select_program_id
             )
             places_target = await parser.get_places(select_program_id)
-            my_pos = target_program_table.get(user_id, {}).get("num", 0)
+            my_pos = target_program_table.get(epgu_user_id, {}).get("num", 0)
 
         if not my_pos or not target_program_table:
             return None
@@ -455,7 +452,7 @@ async def get_my_etu_pos(
 ) -> tuple[int | None, int | None, int]:
     async with ClientSession(timeout=ClientTimeout(60 * 5)) as session:
         logger.info("Start Etu Parser")
-        parser = EtuParser(user_id_in_etu=user_id_in_etu, session=session)
+        parser = EtuParser(upgu_user_id=user_id_in_etu, session=session)
         pos, current_pos = await parser.get_current_pos(programm_name=programm_name)
         general_budget_seats = EtuParser.PROGRAMS[programm_name]["general_budget_seats"]
     await session.close()
@@ -463,16 +460,16 @@ async def get_my_etu_pos(
 
 
 async def sender(
-    programm_name: str = "Программная инженерия", user_id: str = "3675991"
+    programm_name: str = "Программная инженерия", epgu_user_id: str = "3675991"
 ):
     while True:
         etu_task = asyncio.create_task(
             get_my_etu_pos(
-                user_id_in_etu=user_id,
+                user_id_in_etu=epgu_user_id,
                 programm_name=programm_name,
             )
         )
-        poly_task = asyncio.create_task(get_my_poly_pos(user_id=user_id))
+        poly_task = asyncio.create_task(get_my_poly_pos(epgu_user_id=epgu_user_id))
         etu_data = await etu_task
         poly_data = await poly_task
 
