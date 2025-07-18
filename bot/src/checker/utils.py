@@ -1,14 +1,19 @@
 import asyncio
 import logging
+import random
 from urllib.parse import parse_qs, urlparse
 
 from aiohttp import ClientSession, ClientTimeout
 from bs4 import BeautifulSoup
+from fake_useragent import UserAgent
 from src.checker.router import active_users
 from src.create_bot import bot
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# Добавьте после импортов
+ua = UserAgent()
 
 
 class EtuParser:
@@ -147,8 +152,8 @@ class EtuParser:
     }
 
     def __init__(self, user_id_in_etu: str, session: ClientSession):
-        self.user_id_in_etu = user_id_in_etu
-        self.session = session
+        self.user_id_in_etu: str = user_id_in_etu
+        self.session: ClientSession = session
 
     async def program_for_user(self, url_id: str, users: dict) -> list:
         url = "https://lists.priem.etu.ru/public/list"
@@ -219,21 +224,35 @@ class EtuParser:
 
             html = await response.text()
             soup = BeautifulSoup(html, "lxml")
-            res = {}
+            data = []
             for row in soup.find_all("tr"):
                 rows_data = [i.text.strip() for i in row.find_all("td")]
                 if rows_data:
                     id = rows_data[1]
-                    if id == self.user_id_in_etu:
-                        break
-                    quata = rows_data[3]
-                    if quata not in ("БВИ", "Основные места"):
-                        continue
-
-                    rate = int(rows_data[4])
                     priority = int(rows_data[2])
+                    quata = rows_data[3]
+                    rate = int(rows_data[4])
+                    rate_without = int(rows_data[5])
+                    data.append(
+                        (
+                            id,
+                            priority,
+                            int(quata in ("БВИ", "Основные места")),
+                            rate,
+                            rate_without,
+                        )
+                    )
 
-                    res[id] = {"rate": rate, "priority": priority}
+            data.sort(key=lambda x: (x[2], x[3], x[4]), reverse=True)
+            res = {}
+            for rows_data in data:
+                id = rows_data[0]
+                priority = int(rows_data[1])
+                quata = rows_data[2]
+                rate = int(rows_data[3])
+                if id == self.user_id_in_etu:
+                    break
+                res[id] = {"rate": rate, "priority": priority}
             return res
 
     async def get_current_pos(self, programm_name) -> tuple[int | None, int | None]:
@@ -267,8 +286,8 @@ class PolyParser:
         "sec-fetch-dest": "empty",
         "sec-fetch-mode": "cors",
         "sec-fetch-site": "same-origin",
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 YaBrowser/25.6.0.0 Safari/537.36",
-        "x-csrftoken": "undefined",
+        "user-agent": ua.random,
+        "x-csrftoken": str(random.randint(10000, 99999)),
     }
 
     PROGRAMS_IDS = [
@@ -287,9 +306,21 @@ class PolyParser:
         243,  # 45.03.04 Интеллектуальные системы в гуманитарной сфере
     ]
 
-    def __init__(self, session, user_id):
-        self.session = session
-        self.user_id = user_id
+    def __init__(self, session: ClientSession, user_id: str):
+        self.session: ClientSession = session
+        self.user_id: str = user_id
+
+    async def update_cookie(self) -> None:
+        async with self.session.get(
+            "https://my.spbstu.ru/home/abit/list-applicants/bachelor",
+            headers=self.HEADERS,
+        ) as response:
+            if response.status != 200:
+                response.raise_for_status()
+            cookies = response.cookies
+            logger.info(f"Cookies: {cookies}")
+            cookies_dict = dict(cookies.items())
+            self.session.cookie_jar.update_cookies(cookies_dict)
 
     async def get_programs_id(self) -> list[str]:
         json_data = {
@@ -328,6 +359,7 @@ class PolyParser:
             if response.status != 200:
                 response.raise_for_status()
             json_data = await response.json()
+            # logger.info(f"Program ID: {program_id}, Response: {json_data}")
             results = json_data.get("results", {})
             table = {}
             k = 1
@@ -371,55 +403,62 @@ class PolyParser:
         return concurrents
 
 
-async def get_my_poly_pos(session, user_id: str) -> tuple[int, int, int]:
-    select_program_id = "847"  # Программная инженерия
-    logger.info("Start Poly Parser")
-    parser = PolyParser(session, user_id)
-    try:
-        target_program_table = await parser.get_target_program_table(select_program_id)
-        places_target = await parser.get_places(select_program_id)
-        my_pos = target_program_table.get(user_id, {}).get("num", 0)
-    except TimeoutError:
-        await asyncio.sleep(60)
-        logger.info("Sleep 60 sec...")
-
-        target_program_table = await parser.get_target_program_table(select_program_id)
-        places_target = await parser.get_places(select_program_id)
-        my_pos = target_program_table.get(user_id, {}).get("num", 0)
-
-    if not my_pos or not target_program_table:
-        return None
-    concurents = parser.get_concurents(target_program_table, my_pos)
-    logger.info(
-        f"Concurents count: {len(concurents)}, my_pos: {my_pos}, places: {places_target}"
-    )
-    for program_id in PolyParser.PROGRAMS_IDS:
-        if program_id == select_program_id:
-            continue
+async def get_my_poly_pos(user_id: str) -> tuple[int, int, int]:
+    async with ClientSession(timeout=ClientTimeout(60 * 5)) as session:
+        select_program_id = "847"  # Программная инженерия
+        logger.info("Start Poly Parser")
+        parser = PolyParser(session, user_id)
+        await parser.update_cookie()
         try:
-            program_table = await parser.get_target_program_table(program_id)
+            target_program_table = await parser.get_target_program_table(
+                select_program_id
+            )
+            places_target = await parser.get_places(select_program_id)
+            my_pos = target_program_table.get(user_id, {}).get("num", 0)
         except TimeoutError:
             await asyncio.sleep(60)
             logger.info("Sleep 60 sec...")
 
-            program_table = await parser.get_target_program_table(program_id)
-        places = await parser.get_places(program_id)
-        concurents = parser.clear_concurents(
-            concurrents=concurents, table=program_table, places=places
+            target_program_table = await parser.get_target_program_table(
+                select_program_id
+            )
+            places_target = await parser.get_places(select_program_id)
+            my_pos = target_program_table.get(user_id, {}).get("num", 0)
+
+        if not my_pos or not target_program_table:
+            return None
+        concurents = parser.get_concurents(target_program_table, my_pos)
+        logger.info(
+            f"Concurents count: {len(concurents)}, my_pos: {my_pos}, places: {places_target}"
         )
-        logger.info(f"Poly Program {program_id} - parsed")
+        for program_id in PolyParser.PROGRAMS_IDS:
+            if program_id == select_program_id:
+                continue
+            try:
+                program_table = await parser.get_target_program_table(program_id)
+            except TimeoutError:
+                await asyncio.sleep(60)
+                logger.info("Sleep 60 sec...")
+
+                program_table = await parser.get_target_program_table(program_id)
+            places = await parser.get_places(program_id)
+            concurents = parser.clear_concurents(
+                concurrents=concurents, table=program_table, places=places
+            )
+            logger.info(f"Poly Program {program_id} - parsed")
     return my_pos, len(concurents), places_target
 
 
 async def get_my_etu_pos(
-    session: ClientSession,
     user_id_in_etu: str,
     programm_name: str = "Программная инженерия",
 ) -> tuple[int | None, int | None, int]:
-    logger.info("Start Etu Parser")
-    parser = EtuParser(user_id_in_etu=user_id_in_etu, session=session)
-    pos, current_pos = await parser.get_current_pos(programm_name=programm_name)
-    general_budget_seats = EtuParser.PROGRAMS[programm_name]["general_budget_seats"]
+    async with ClientSession(timeout=ClientTimeout(60 * 5)) as session:
+        logger.info("Start Etu Parser")
+        parser = EtuParser(user_id_in_etu=user_id_in_etu, session=session)
+        pos, current_pos = await parser.get_current_pos(programm_name=programm_name)
+        general_budget_seats = EtuParser.PROGRAMS[programm_name]["general_budget_seats"]
+    await session.close()
     return pos, current_pos, general_budget_seats
 
 
@@ -427,30 +466,26 @@ async def sender(
     programm_name: str = "Программная инженерия", user_id: str = "3675991"
 ):
     while True:
-        async with ClientSession(timeout=ClientTimeout(60 * 5)) as session:
-            etu_task = asyncio.create_task(
-                get_my_etu_pos(
-                    session=session,
-                    user_id_in_etu=user_id,
-                    programm_name=programm_name,
-                )
+        etu_task = asyncio.create_task(
+            get_my_etu_pos(
+                user_id_in_etu=user_id,
+                programm_name=programm_name,
             )
-            poly_task = asyncio.create_task(
-                get_my_poly_pos(session=session, user_id=user_id)
-            )
-            etu_data = await etu_task
-            poly_data = await poly_task
+        )
+        poly_task = asyncio.create_task(get_my_poly_pos(user_id=user_id))
+        etu_data = await etu_task
+        poly_data = await poly_task
 
         results = []
         if etu_data:
             etu_pos, etu_concurents, etu_places = etu_data
-            res_etu = (
-                f"ЛЭТИ: {etu_concurents + 1} ({etu_pos}) / {etu_places} мест"
-            )
+            res_etu = f"ЛЭТИ: {etu_concurents + 1} ({etu_pos}) / {etu_places} мест"
             results.append(res_etu)
         if poly_data:
             poly_pos, poly_concurents, poly_places = poly_data
-            res_poly = f"Политех: {poly_pos} ({poly_concurents + 1}) / {poly_places} мест"
+            res_poly = (
+                f"Политех: {poly_pos} ({poly_concurents + 1}) / {poly_places} мест"
+            )
             results.append(res_poly)
 
         if results:
@@ -461,5 +496,6 @@ async def sender(
             logger.info(mes)
             logger.info(f"end pars\n{'-' * 100}")
         else:
-            logger.error("Ошибка парсинга")
-        await asyncio.sleep(60 * 60 * 2)
+            logger.error("Parsing error, no data received")
+        delay = random.randint(int(60 * 60 * 1.5), 60 * 60 * 2)
+        # await asyncio.sleep(10)
