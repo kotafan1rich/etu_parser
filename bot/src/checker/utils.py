@@ -224,15 +224,14 @@ class EtuParser:
                 rows_data = [i.text.strip() for i in row.find_all("td")]
                 if rows_data:
                     id = rows_data[1]
+                    if id == self.user_id_in_etu:
+                        break
                     quata = rows_data[3]
-                    if id == "3675991" or quata not in ("БВИ", "Основные места"):
+                    if quata not in ("БВИ", "Основные места"):
                         continue
 
                     rate = int(rows_data[4])
                     priority = int(rows_data[2])
-
-                    if rate < 285 and quata == "Основные места":
-                        break
 
                     res[id] = {"rate": rate, "priority": priority}
             return res
@@ -428,7 +427,7 @@ async def sender(
     programm_name: str = "Программная инженерия", user_id: str = "3675991"
 ):
     while True:
-        async with ClientSession(timeout=ClientTimeout(60 * 10)) as session:
+        async with ClientSession(timeout=ClientTimeout(60 * 5)) as session:
             etu_task = asyncio.create_task(
                 get_my_etu_pos(
                     session=session,
