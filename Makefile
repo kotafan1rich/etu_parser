@@ -21,7 +21,7 @@ rebuild: down build up
 reup: down up
 
 help:
-	@echo "Доступные цели:"
+	@echo "Доступные команды:"
 	@echo "  build       - Собрать Docker контейнеры"
 	@echo "  up          - Запустить Docker контейнеры в фоновом режиме"
 	@echo "  down        - Остановить и удалить Docker контейнеры"
