@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import random
 from urllib.parse import parse_qs, urlparse
@@ -242,7 +243,7 @@ class EtuParser:
                         )
                     )
 
-            data.sort(key=lambda x: (x[2], x[3], x[4]), reverse=True)
+            data.sort(key=lambda x: (x[3], x[4], x[2]), reverse=True)
             res = {}
             for rows_data in data:
                 id = rows_data[0]
@@ -320,7 +321,7 @@ class PolyParser:
             cookies_dict = dict(cookies.items())
             self.session.cookie_jar.update_cookies(cookies_dict)
 
-    async def get_programs_id(self) -> list[str]:
+    async def get_program_ids(self) -> list[str]:
         json_data = {
             "id_1": "2",
             "id_2": "1",
@@ -342,7 +343,7 @@ class PolyParser:
             ]
             return valid_ids
 
-    async def get_target_program_table(self, program_id: str) -> dict:
+    async def get_program_table(self, program_id: str) -> dict:
         params = {
             "filter_1": "2",
             "filter_2": "1",
@@ -389,7 +390,7 @@ class PolyParser:
                 concurrents[key] = value
         return concurrents
 
-    def clear_concurents(self, concurrents: dict, table, places: int) -> dict:
+    def clear_concurrents(self, concurrents: dict, table: dict, places: int) -> dict:
         for code in concurrents.copy().keys():
             if code in table:
                 cur_pr = concurrents[code]["priority"]
@@ -400,6 +401,153 @@ class PolyParser:
         return concurrents
 
 
+class BonchParser:
+    HEADERS = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "ru,en;q=0.9",
+        "Cache-Control": "max-age=0",
+        "Connection": "keep-alive",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Origin": "https://priem.sut.ru",
+        "Referer": "https://priem.sut.ru/spisok-abiturientov",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": ua.random,
+        "sec-ch-ua": '"Chromium";v="136", "YaBrowser";v="25.6", "Not.A/Brand";v="99", "Yowser";v="2.5"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        # 'Cookie': '_ym_uid=1745337331878608362; _ym_d=1745337331; PHPSESSID=opjvt7tupba02h2a41st21d6s6; _ym_isad=2; _ym_visorc=w',
+    }
+
+    def __init__(self, session: ClientSession, epgu_user_id: str):
+        self.session: ClientSession = session
+        self.epgu_user_id: str = epgu_user_id
+
+    async def update_cookie(self) -> None:
+        async with self.session.get(
+            "https://priem.sut.ru/spisok-abiturientov",
+            headers=self.HEADERS,
+        ) as response:
+            if response.status != 200:
+                response.raise_for_status()
+            cookies = response.cookies
+            cookies_dict = dict(cookies.items())
+            self.session.cookie_jar.update_cookies(cookies_dict)
+
+    async def get_programs_ids(self) -> list[int]:
+        data = 'jsonData={"action":"get_spec","education_base_to":"11","training_form":"4","general":"101","training_type":"1"}'
+        url = "https://priem.sut.ru/new_site/inc/ajax_abitur_2025.php"
+        async with self.session.post(url, headers=self.HEADERS, data=data) as response:
+            if response.status != 200:
+                response.raise_for_status()
+            text_response = await response.text()
+            json_data = json.loads(text_response)
+            html = json_data.get("selecter")
+            soup = BeautifulSoup(html, "lxml")
+            ids = []
+            for i in soup.find_all("option"):
+                ids.append(int(i.get("value")))
+            return ids
+
+    async def get_soup(self, data, url, is_post: bool = False):
+        if is_post:
+            response = await self.session.post(url, headers=self.HEADERS, data=data)
+        else:
+            response = await self.session.get(url, headers=self.HEADERS, data=data)
+        if response.status != 200:
+            response.raise_for_status()
+        html = await response.text()
+        soup = BeautifulSoup(html, "lxml")
+        response.close()
+        return soup
+
+    async def get_program_table(self, soup, program_id: int):
+        table = soup.find("table", id=f"t_{program_id}")
+        res = {}
+        for tr in table.find_all("tr", style="cursor: pointer;   "):
+            rows_data = [i.text for i in tr.find_all("td")]
+            num = int(rows_data[0].strip("."))
+            id = rows_data[1]
+            priority = int(rows_data[3])
+            rate = int(rows_data[7])
+            res[id] = {"num": num, "priority": priority, "rate": rate}
+        return res
+
+    async def get_places(self, soup):
+        places = int(
+            soup.find("td", style="background: #efefef;padding: 5px 2px;").text
+        )
+        return places
+
+    def get_concurents(self, table: dict, my_pos: int) -> dict:
+        concurrents = {}
+        for key, value in table.items():
+            if value["num"] < my_pos:
+                concurrents[key] = value
+        return concurrents
+
+    async def clear_concurrents(self, table: dict, concurrents: dict, places: int):
+        for id in concurrents.copy().keys():
+            if id in table:
+                cur_pr = concurrents[id]["priority"]
+                prog_pr = table[id]["priority"]
+                prog_pos = table[id]["num"]
+                if prog_pos <= places and cur_pr > prog_pr:
+                    concurrents.pop(id)
+        return concurrents
+
+
+async def get_my_bonch_pose(epgu_user_id: str) -> tuple[int, int, int]:
+    async with ClientSession(timeout=ClientTimeout(total=60 * 5)) as session:
+        bonch_parser = BonchParser(
+            session=session,
+            epgu_user_id=epgu_user_id,
+        )
+        await bonch_parser.update_cookie()
+        program_ids = await bonch_parser.get_programs_ids()
+        target_id = 399153
+        data = {
+            "general": "101",
+            "education_base_to": "11",
+            "training_form": "4",
+            "training_type": "1",
+            "1cunv_groupab": target_id,
+            "action": "get_result_new",
+            "rekzach": "0",
+        }
+        url = "https://priem.sut.ru/spisok-abiturientov"
+        soup = await bonch_parser.get_soup(data=data, url=url, is_post=True)
+        target_program_table = await bonch_parser.get_program_table(
+            soup=soup, program_id=target_id
+        )
+        target_program_places = await bonch_parser.get_places(soup=soup)
+        my_pos: int = target_program_table[epgu_user_id]["num"]
+        concurrents = bonch_parser.get_concurents(
+            table=target_program_table, my_pos=my_pos
+        )
+        logger.info(
+            f"Concurents count: {len(concurrents)}, my_pos: {my_pos}, places: {target_program_places}"
+        )
+        for program_id in program_ids:
+            if program_id == target_id:
+                continue
+            data["1cunv_groupab"] = program_id
+            soup = await bonch_parser.get_soup(data=data, url=url, is_post=True)
+            places = await bonch_parser.get_places(soup=soup)
+            table_data = await bonch_parser.get_program_table(
+                soup=soup, program_id=program_id
+            )
+            concurrents = await bonch_parser.clear_concurrents(
+                table=table_data, concurrents=concurrents, places=places
+            )
+            logger.info(f"Bonch Program {program_id} - parsed")
+
+        return my_pos, len(concurrents), target_program_places
+
+
 async def get_my_poly_pos(epgu_user_id: str) -> tuple[int, int, int]:
     async with ClientSession(timeout=ClientTimeout(60 * 5)) as session:
         select_program_id = "847"  # Программная инженерия
@@ -407,43 +555,39 @@ async def get_my_poly_pos(epgu_user_id: str) -> tuple[int, int, int]:
         parser = PolyParser(session, epgu_user_id)
         await parser.update_cookie()
         try:
-            target_program_table = await parser.get_target_program_table(
-                select_program_id
-            )
-            places_target = await parser.get_places(select_program_id)
+            target_program_table = await parser.get_program_table(select_program_id)
+            target_program_places = await parser.get_places(select_program_id)
             my_pos = target_program_table.get(epgu_user_id, {}).get("num", 0)
         except TimeoutError:
             await asyncio.sleep(60)
             logger.info("Sleep 60 sec...")
 
-            target_program_table = await parser.get_target_program_table(
-                select_program_id
-            )
-            places_target = await parser.get_places(select_program_id)
+            target_program_table = await parser.get_program_table(select_program_id)
+            target_program_places = await parser.get_places(select_program_id)
             my_pos = target_program_table.get(epgu_user_id, {}).get("num", 0)
 
         if not my_pos or not target_program_table:
             return None
         concurents = parser.get_concurents(target_program_table, my_pos)
         logger.info(
-            f"Concurents count: {len(concurents)}, my_pos: {my_pos}, places: {places_target}"
+            f"Concurents count: {len(concurents)}, my_pos: {my_pos}, places: {target_program_places}"
         )
         for program_id in PolyParser.PROGRAMS_IDS:
             if program_id == select_program_id:
                 continue
             try:
-                program_table = await parser.get_target_program_table(program_id)
+                program_table = await parser.get_program_table(program_id)
             except TimeoutError:
                 await asyncio.sleep(60)
                 logger.info("Sleep 60 sec...")
 
-                program_table = await parser.get_target_program_table(program_id)
+                program_table = await parser.get_program_table(program_id)
             places = await parser.get_places(program_id)
-            concurents = parser.clear_concurents(
+            concurents = parser.clear_concurrents(
                 concurrents=concurents, table=program_table, places=places
             )
             logger.info(f"Poly Program {program_id} - parsed")
-    return my_pos, len(concurents), places_target
+    return my_pos, len(concurents), target_program_places
 
 
 async def get_my_etu_pos(
@@ -455,7 +599,6 @@ async def get_my_etu_pos(
         parser = EtuParser(upgu_user_id=user_id_in_etu, session=session)
         pos, current_pos = await parser.get_current_pos(programm_name=programm_name)
         general_budget_seats = EtuParser.PROGRAMS[programm_name]["general_budget_seats"]
-    await session.close()
     return pos, current_pos, general_budget_seats
 
 
@@ -470,8 +613,11 @@ async def sender(
             )
         )
         poly_task = asyncio.create_task(get_my_poly_pos(epgu_user_id=epgu_user_id))
+        bonch_task = asyncio.create_task(get_my_bonch_pose(epgu_user_id=epgu_user_id))
+
         etu_data = await etu_task
         poly_data = await poly_task
+        bonch_data = await bonch_task
 
         results = []
         if etu_data:
@@ -484,6 +630,12 @@ async def sender(
                 f"Политех: {poly_pos} ({poly_concurents + 1}) / {poly_places} мест"
             )
             results.append(res_poly)
+        if bonch_data:
+            bonch_pos, bonch_concurents, bonch_places = bonch_data
+            res_bonch = (
+                f"Бонч: {bonch_pos} ({bonch_concurents + 1}) / {bonch_places} мест"
+            )
+            results.append(res_bonch)
 
         if results:
             mes = "\n".join(results)
