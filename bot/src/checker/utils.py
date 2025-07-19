@@ -13,6 +13,8 @@ from src.create_bot import bot
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+from aiogram.exceptions import TelegramBadRequest
+
 ua = UserAgent()
 
 
@@ -610,7 +612,7 @@ async def sender(
             programm_name=programm_name,
         )
         poly_data = await get_my_poly_pos(epgu_user_id=epgu_user_id)
-        bonch_data = await get_my_bonch_pose(epgu_user_id=epgu_user_id)
+        # bonch_data = await get_my_bonch_pose(epgu_user_id=epgu_user_id)
 
         results = []
         if etu_data:
@@ -623,17 +625,20 @@ async def sender(
                 f"Политех: {poly_pos} ({poly_concurents + 1}) / {poly_places} мест"
             )
             results.append(res_poly)
-        if bonch_data:
-            bonch_pos, bonch_concurents, bonch_places = bonch_data
-            res_bonch = (
-                f"Бонч: {bonch_pos} ({bonch_concurents + 1}) / {bonch_places} мест"
-            )
-            results.append(res_bonch)
+        # if bonch_data:
+        #     bonch_pos, bonch_concurents, bonch_places = bonch_data
+        #     res_bonch = (
+        #         f"Бонч: {bonch_pos} ({bonch_concurents + 1}) / {bonch_places} мест"
+        #     )
+        #     results.append(res_bonch)
 
         if results:
             mes = "\n".join(results)
             for user_id in active_users:
-                await bot.send_message(user_id, mes)
+                try:
+                    await bot.send_message(user_id, mes)
+                except TelegramBadRequest:
+                    ...
 
             logger.info(mes)
             logger.info(f"end pars\n{'-' * 100}")
