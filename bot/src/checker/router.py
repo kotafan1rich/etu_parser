@@ -5,6 +5,7 @@ from src.create_bot import bot
 
 active_users = {
     1324716819,
+    5149774783
 }
 
 
