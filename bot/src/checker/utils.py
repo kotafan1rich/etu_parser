@@ -591,8 +591,7 @@ async def get_my_poly_pos(epgu_user_id: str) -> tuple[int, int, int]:
 
 
 async def get_my_etu_pos(
-    user_id_in_etu: str,
-    programm_name: str = "Программная инженерия",
+    user_id_in_etu: str, programm_name: str = "Программная инженерия"
 ) -> tuple[int | None, int | None, int]:
     async with ClientSession(timeout=ClientTimeout(60 * 5)) as session:
         logger.info("Start Etu Parser")
@@ -606,18 +605,12 @@ async def sender(
     programm_name: str = "Программная инженерия", epgu_user_id: str = "3675991"
 ):
     while True:
-        etu_task = asyncio.create_task(
-            get_my_etu_pos(
-                user_id_in_etu=epgu_user_id,
-                programm_name=programm_name,
-            )
+        etu_data = await get_my_etu_pos(
+            user_id_in_etu=epgu_user_id,
+            programm_name=programm_name,
         )
-        poly_task = asyncio.create_task(get_my_poly_pos(epgu_user_id=epgu_user_id))
-        bonch_task = asyncio.create_task(get_my_bonch_pose(epgu_user_id=epgu_user_id))
-
-        etu_data = await etu_task
-        poly_data = await poly_task
-        bonch_data = await bonch_task
+        poly_data = await get_my_poly_pos(epgu_user_id=epgu_user_id)
+        bonch_data = await get_my_bonch_pose(epgu_user_id=epgu_user_id)
 
         results = []
         if etu_data:
@@ -646,5 +639,5 @@ async def sender(
             logger.info(f"end pars\n{'-' * 100}")
         else:
             logger.error("Parsing error, no data received")
-        delay = random.randint(int(60 * 60 * 1.5), 60 * 60 * 2)
+        delay = 60 * 60 * 1.5
         await asyncio.sleep(delay)
