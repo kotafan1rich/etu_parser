@@ -231,10 +231,10 @@ class EtuParser:
                 rows_data = [i.text.strip() for i in row.find_all("td")]
                 if rows_data:
                     id = rows_data[1]
-                    priority = int(rows_data[2])
+                    priority = int(rows_data[2]) if rows_data[2] else 0
                     quata = rows_data[3]
-                    rate = int(rows_data[4])
-                    rate_without = int(rows_data[5])
+                    rate = int(rows_data[4]) if rows_data[4] else 0
+                    rate_without = int(rows_data[5]) if rows_data[5] else 0
                     data.append(
                         (
                             id,
