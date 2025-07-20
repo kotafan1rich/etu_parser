@@ -204,7 +204,7 @@ class EtuParser(BaseParser):
                 code = rows_data[1]
                 priority = int(rows_data[2]) if rows_data[2] else 0
                 quata = rows_data[3]
-                if quata in ("БВИ", "Основные места"):
+                if quata in ("БВИ", "Основные места") and code not in data:
                     data[code] = {"num": k, "priority": priority}
                     k += 1
         return data
