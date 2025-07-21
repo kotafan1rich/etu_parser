@@ -2,12 +2,12 @@ import asyncio
 import json
 import logging
 import random
-from urllib.parse import parse_qs, urlparse
 
 from aiogram.exceptions import TelegramBadRequest
 from aiohttp import ClientSession, ClientTimeout
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
+from src.checker.models import Abitur, QuotaType
 from src.checker.router import active_users
 from src.create_bot import bot
 
@@ -34,20 +34,22 @@ class BaseParser:
         response.close()
         return soup
 
-    def get_concurrents(self, table: dict) -> dict:
-        my_pos = table.get(self.epgu_uer_id).get("num")
+    def get_concurrents(self, table: dict[str, Abitur]) -> dict:
+        my_pos = table.get(self.epgu_uer_id).num
         concurrents = {}
-        for key, value in table.items():
-            if value["num"] < my_pos:
-                concurrents[key] = value
+        for code, abitur in table.items():
+            if abitur.num < my_pos:
+                concurrents[code] = abitur
         return concurrents
 
-    def clear_concurrents(self, concurrents: dict, table: dict, places: int) -> dict:
+    def clear_concurrents(
+        self, concurrents: dict[str, Abitur], table: dict[str, Abitur], places: int
+    ) -> dict[str, Abitur]:
         for code in concurrents.copy().keys():
             if code in table:
-                cur_pr = concurrents[code]["priority"]
-                prog_pr = table[code]["priority"]
-                prog_pos = table[code]["num"]
+                cur_pr = concurrents.get(code).priority
+                prog_pr = table.get(code).priority
+                prog_pos = table.get(code).num
                 if prog_pos <= places and cur_pr > prog_pr:
                     concurrents.pop(code)
         return concurrents
@@ -176,16 +178,6 @@ class EtuParser(BaseParser):
             "id": "01978f26-62c1-7a35-8181-19d07c7a8562",
             "general_budget_seats": 46,
         },
-        "Реклама и связи с общественностью": {
-            "code": "42.03.01",
-            "id": "01978f26-62c1-7a35-8181-19d0768b385d",
-            "general_budget_seats": 0,
-        },
-        "Лингвистика": {
-            "code": "45.03.02",
-            "id": "01978f26-62c1-7a35-8181-19d075c339dc",
-            "general_budget_seats": 6,
-        },
     }
 
     PROGRAMS_LIST = [value.get("id") for value in PROGRAMS.values()]
@@ -195,7 +187,7 @@ class EtuParser(BaseParser):
         all_mest = int(self.PROGRAMS[name]["general_budget_seats"])
         return all_mest
 
-    async def get_program_table(self, soup: BeautifulSoup):
+    async def get_program_table(self, soup: BeautifulSoup) -> dict:
         data = {}
         k = 1
         for row in soup.find_all("tr"):
@@ -203,9 +195,18 @@ class EtuParser(BaseParser):
             if rows_data:
                 code = rows_data[1]
                 priority = int(rows_data[2]) if rows_data[2] else 0
-                quata = rows_data[3]
-                if quata in ("БВИ", "Основные места") and code not in data:
-                    data[code] = {"num": k, "priority": priority}
+                quota = rows_data[3]
+                if quota == "БВИ":
+                    quota = QuotaType.NO_EXAM
+                elif quota == "Основные места":
+                    quota = QuotaType.GENERAL
+                else:
+                    quota = QuotaType.OTHER
+                rate = int(rows_data[4]) if rows_data[4] else 0
+                if quota in (QuotaType.NO_EXAM, QuotaType.GENERAL) and code not in data:
+                    data[code] = Abitur(
+                        code=code, num=k, rate=rate, priority=priority, quota=quota
+                    )
                     k += 1
         return data
 
@@ -241,6 +242,7 @@ class EtuParser(BaseParser):
                         concurrents=concurrents, table=program_table, places=places
                     )
                 logger.info(f"Program Etu {program_id} - parsed")
+
         return my_pos, len(concurrents), target_program_places
 
 
@@ -310,7 +312,23 @@ class PolyParser(BaseParser):
             ]
             return valid_ids
 
-    async def get_program_table(self, program_id: str) -> dict:
+    def clear_concurrents(
+        self, concurrents: dict[str, Abitur], table: dict[str, Abitur], places: int
+    ) -> dict[str, Abitur]:
+        for code in concurrents.copy().keys():
+            if code in table:
+                cur_pr = concurrents.get(code).priority
+                prog_pr = table.get(code).priority
+                prog_pos = table.get(code).num
+                rate = concurrents.get(code).rate
+                quota = concurrents.get(code).quota
+                if (prog_pos <= places and cur_pr > prog_pr) or (
+                    rate != 0 and quota == QuotaType.NO_EXAM
+                ):
+                    concurrents.pop(code)
+        return concurrents
+
+    async def get_program_table(self, program_id: str) -> dict[str, Abitur]:
         params = {
             "filter_1": "2",
             "filter_2": "1",
@@ -328,10 +346,20 @@ class PolyParser(BaseParser):
             results = json_data.get("results", {})
             table = {}
             k = 1
-            for i in results:
-                if i["code"] not in table:
-                    table[i["code"]] = i
-                    i["num"] = k
+            for row_data in results:
+                code = row_data.get("code")
+                num = k
+                rate = int(row_data.get("sum")) if row_data.get("sum") else 0
+                priority = row_data.get("priority")
+                quota = row_data.get("base")
+                if quota == "Нет":
+                    quota = QuotaType.GENERAL
+                else:
+                    quota = QuotaType.NO_EXAM
+                if code not in table:
+                    table[code] = Abitur(
+                        code=code, num=num, quota=quota, priority=priority, rate=rate
+                    )
                     k += 1
             return table
 
@@ -398,7 +426,7 @@ class BonchParser(BaseParser):
                 ids.append(int(i.get("value")))
             return ids
 
-    async def get_program_table(self, soup, program_id: int):
+    async def get_program_table(self, soup, program_id: int) -> dict[str, Abitur]:
         table = soup.find("table", id=f"t_{program_id}")
         res = {}
         for tr in table.find_all("tr", style="cursor: pointer;   "):
@@ -442,7 +470,7 @@ async def get_my_bonch_pose(epgu_user_id: str) -> tuple[int, int, int]:
             soup=soup, program_id=target_id
         )
         target_program_places = await bonch_parser.get_places(soup=soup)
-        my_pos: int = target_program_table[epgu_user_id]["num"]
+        my_pos: int = target_program_table.get(epgu_user_id).num
         concurrents = bonch_parser.get_concurrents(table=target_program_table)
         logger.info(
             f"concurrents count: {len(concurrents)}, my_pos: {my_pos}, places: {target_program_places}"
@@ -475,14 +503,14 @@ async def get_my_poly_pos(epgu_user_id: str) -> tuple[int, int, int]:
         try:
             target_program_table = await parser.get_program_table(select_program_id)
             target_program_places = await parser.get_places(select_program_id)
-            my_pos = target_program_table.get(epgu_user_id, {}).get("num", 0)
+            my_pos = target_program_table.get(epgu_user_id, {}).num
         except TimeoutError:
             await asyncio.sleep(60)
             logger.info("Sleep 60 sec...")
 
             target_program_table = await parser.get_program_table(select_program_id)
             target_program_places = await parser.get_places(select_program_id)
-            my_pos = target_program_table.get(epgu_user_id, {}).get("num", 0)
+            my_pos = target_program_table.get(epgu_user_id, {}).num
 
         if not my_pos or not target_program_table:
             return None
@@ -496,8 +524,8 @@ async def get_my_poly_pos(epgu_user_id: str) -> tuple[int, int, int]:
             try:
                 program_table = await parser.get_program_table(program_id)
             except TimeoutError:
-                await asyncio.sleep(60)
                 logger.info("Sleep 60 sec...")
+                await asyncio.sleep(60)
 
                 program_table = await parser.get_program_table(program_id)
             places = await parser.get_places(program_id)
