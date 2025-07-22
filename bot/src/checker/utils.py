@@ -348,14 +348,15 @@ class PolyParser(BaseParser):
             k = 1
             for row_data in results:
                 code = row_data.get("code")
-                num = k
                 rate = int(row_data.get("sum")) if row_data.get("sum") else 0
                 priority = row_data.get("priority")
                 quota = row_data.get("base")
                 if quota == "Нет":
                     quota = QuotaType.GENERAL
+                    num = k
                 else:
                     quota = QuotaType.NO_EXAM
+                    num = 1
                 if code not in table:
                     table[code] = Abitur(
                         code=code, num=num, quota=quota, priority=priority, rate=rate
@@ -503,18 +504,17 @@ async def get_my_poly_pos(epgu_user_id: str) -> tuple[int, int, int]:
         try:
             target_program_table = await parser.get_program_table(select_program_id)
             target_program_places = await parser.get_places(select_program_id)
-            my_pos = target_program_table.get(epgu_user_id, {}).num
         except TimeoutError:
             await asyncio.sleep(60)
             logger.info("Sleep 60 sec...")
 
             target_program_table = await parser.get_program_table(select_program_id)
             target_program_places = await parser.get_places(select_program_id)
-            my_pos = target_program_table.get(epgu_user_id, {}).num
 
+        concurrents = parser.get_concurrents(target_program_table)
+        my_pos = len(concurrents) + 1
         if not my_pos or not target_program_table:
             return None
-        concurrents = parser.get_concurrents(target_program_table)
         logger.info(
             f"concurrents count: {len(concurrents)}, my_pos: {my_pos}, places: {target_program_places}"
         )
@@ -552,11 +552,11 @@ async def sender(
     programm_name: str = "Программная инженерия", epgu_user_id: str = "3675991"
 ):
     while True:
+        poly_data = await get_my_poly_pos(epgu_user_id=epgu_user_id)
         etu_data = await get_my_etu_pos(
             epgu_user_id=epgu_user_id,
             programm_name=programm_name,
         )
-        poly_data = await get_my_poly_pos(epgu_user_id=epgu_user_id)
         # bonch_data = await get_my_bonch_pose(epgu_user_id=epgu_user_id)
 
         results = []
