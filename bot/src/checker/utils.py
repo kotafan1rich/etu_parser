@@ -320,11 +320,8 @@ class PolyParser(BaseParser):
                 cur_pr = concurrents.get(code).priority
                 prog_pr = table.get(code).priority
                 prog_pos = table.get(code).num
-                rate = concurrents.get(code).rate
-                quota = concurrents.get(code).quota
-                if (prog_pos <= places and cur_pr > prog_pr) or (
-                    rate != 0 and quota == QuotaType.NO_EXAM
-                ):
+
+                if prog_pos <= places and cur_pr > prog_pr:
                     concurrents.pop(code)
         return concurrents
 
