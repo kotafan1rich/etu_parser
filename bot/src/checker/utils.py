@@ -317,11 +317,11 @@ class PolyParser(BaseParser):
     ) -> dict[str, Abitur]:
         for code in concurrents.copy().keys():
             if code in table:
-                cur_pr = concurrents.get(code).priority
-                prog_pr = table.get(code).priority
-                prog_pos = table.get(code).num
-
-                if prog_pos <= places and cur_pr > prog_pr:
+                comment = concurrents.get(code).comment
+                if comment in (
+                    "Участвует в конкурсе",
+                    "К зачислению по другому приоритету",
+                ):
                     concurrents.pop(code)
         return concurrents
 
@@ -330,7 +330,7 @@ class PolyParser(BaseParser):
             "filter_1": "2",
             "filter_2": "1",
             "filter_3": program_id,
-            "education_level": "bachelor",
+            "education_level": "bachelor_pre_competition_lists",
         }
         async with self.session.get(
             "https://my.spbstu.ru/home/get-abit-list",
@@ -345,18 +345,23 @@ class PolyParser(BaseParser):
             k = 1
             for row_data in results:
                 code = row_data.get("code")
+                num = k
                 rate = int(row_data.get("sum")) if row_data.get("sum") else 0
                 priority = row_data.get("priority")
                 quota = row_data.get("base")
+                comment = row_data.get("comment_status")
                 if quota == "Нет":
                     quota = QuotaType.GENERAL
-                    num = k
                 else:
                     quota = QuotaType.NO_EXAM
-                    num = 1
                 if code not in table:
                     table[code] = Abitur(
-                        code=code, num=num, quota=quota, priority=priority, rate=rate
+                        code=code,
+                        num=num,
+                        quota=quota,
+                        priority=priority,
+                        rate=rate,
+                        comment=comment,
                     )
                     k += 1
             return table

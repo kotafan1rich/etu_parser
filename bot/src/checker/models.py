@@ -15,6 +15,8 @@ class Abitur(BaseModel):
     quota: QuotaType
     priority: int = Field(ge=1)
     rate: int = Field(ge=0, default=0)
+    sogl: bool = False
+    comment: str = ""
 
     def __int__(self):
         return self.num
