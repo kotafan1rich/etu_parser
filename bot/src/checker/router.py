@@ -17,5 +17,5 @@ async def start(message: Message):
     active_users.add(message.from_user.id)
     await bot.send_message(
         message.from_user.id,
-        "Этот бот отправялет позицию в списке ЛЭТИ и Политеха\n\nhttps://abit.etu.ru/ru/postupayushhim/lists/page/list#/?id=01978f26-62c1-7a35-8181-19d0798f1454\n\nhttps://my.spbstu.ru/home/abit/list-applicants/bachelor",
+        "Этот бот отправялет позицию в списке ЛЭТИ и Политеха\n\nhttps://abit.etu.ru/ru/postupayushhim/lists/page/list#/?id=01978f26-62c1-7a35-8181-19d0798f1454\n\nhttps://my.spbstu.ru/home/abit/list-applicants/bachelor_pre_competition_lists",
     )

@@ -19,7 +19,7 @@ ua = UserAgent()
 
 class BaseParser:
     def __init__(self, epgu_user_id: str, session: ClientSession):
-        self.epgu_uer_id: str = epgu_user_id
+        self.epgu_user_id: str = epgu_user_id
         self.session: ClientSession = session
 
     async def get_soup(self, url: str, is_post: bool = False, **kwargs):
@@ -35,7 +35,7 @@ class BaseParser:
         return soup
 
     def get_concurrents(self, table: dict[str, Abitur]) -> dict:
-        my_pos = table.get(self.epgu_uer_id).num
+        my_pos = table.get(self.epgu_user_id).num
         concurrents = {}
         for code, abitur in table.items():
             if abitur.num < my_pos:
@@ -196,6 +196,7 @@ class EtuParser(BaseParser):
                 code = rows_data[1]
                 priority = int(rows_data[2]) if rows_data[2] else 0
                 quota = rows_data[3]
+                sogl = bool(rows_data[12])
                 if quota == "БВИ":
                     quota = QuotaType.NO_EXAM
                 elif quota == "Основные места":
@@ -203,10 +204,20 @@ class EtuParser(BaseParser):
                 else:
                     quota = QuotaType.OTHER
                 rate = int(rows_data[4]) if rows_data[4] else 0
-                if quota in (QuotaType.NO_EXAM, QuotaType.GENERAL) and code not in data:
-                    data[code] = Abitur(
-                        code=code, num=k, rate=rate, priority=priority, quota=quota
-                    )
+                abitur = Abitur(
+                    code=code,
+                    num=k,
+                    rate=rate,
+                    priority=priority,
+                    quota=quota,
+                    sogl=sogl,
+                )
+                if (
+                    quota in (QuotaType.NO_EXAM, QuotaType.GENERAL)
+                    and code not in data
+                    and sogl
+                ) or code == self.epgu_user_id:
+                    data[code] = abitur
                     k += 1
         return data
 
@@ -350,17 +361,19 @@ class PolyParser(BaseParser):
                 priority = row_data.get("priority")
                 quota = row_data.get("base")
                 comment = row_data.get("comment_status")
+                sogl = row_data.get("agreement") == "Получено"
                 if quota == "Нет":
                     quota = QuotaType.GENERAL
                 else:
                     quota = QuotaType.NO_EXAM
-                if code not in table:
+                if (code not in table and sogl) or (code == self.epgu_user_id):
                     table[code] = Abitur(
                         code=code,
                         num=num,
                         quota=quota,
                         priority=priority,
                         rate=rate,
+                        sogl=sogl,
                         comment=comment,
                     )
                     k += 1
@@ -506,17 +519,19 @@ async def get_my_poly_pos(epgu_user_id: str) -> tuple[int, int, int]:
         try:
             target_program_table = await parser.get_program_table(select_program_id)
             target_program_places = await parser.get_places(select_program_id)
+            # my_pos = target_program_table.get(epgu_user_id, {}).num
         except TimeoutError:
             await asyncio.sleep(60)
             logger.info("Sleep 60 sec...")
 
             target_program_table = await parser.get_program_table(select_program_id)
             target_program_places = await parser.get_places(select_program_id)
+            # my_pos = target_program_table.get(epgu_user_id, {}).num
 
+        if not target_program_table:
+            return None
         concurrents = parser.get_concurrents(target_program_table)
         my_pos = len(concurrents) + 1
-        if not my_pos or not target_program_table:
-            return None
         logger.info(
             f"concurrents count: {len(concurrents)}, my_pos: {my_pos}, places: {target_program_places}"
         )
@@ -564,7 +579,7 @@ async def sender(
         results = []
         if etu_data:
             etu_pos, etu_concurrents, etu_places = etu_data
-            res_etu = f"ЛЭТИ: {etu_pos} ({etu_concurrents}) / {etu_places} мест"
+            res_etu = f"ЛЭТИ: {etu_pos} ({etu_concurrents + 1}) / {etu_places} мест"
             results.append(res_etu)
         if poly_data:
             poly_pos, poly_concurrents, poly_places = poly_data
